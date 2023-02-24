@@ -24,6 +24,10 @@
   const incomingPhoneNumberEl = document.getElementById("incoming-number");
   const startupButton = document.getElementById("startup-button");
 
+  const startLoopButton = document.getElementById("start-loop");
+  const stopLoopButton = document.getElementById("stop-loop");
+  const loopCounter = document.getElementById("loop-counter");
+
   let device;
   let token;
 
@@ -36,7 +40,7 @@
   getAudioDevicesButton.onclick = getAudioDevices;
   speakerDevices.addEventListener("change", updateOutputDevice);
   ringtoneDevices.addEventListener("change", updateRingtoneDevice);
-  
+
 
   // SETUP STEP 1:
   // Browser client should be started after a user gesture
@@ -65,7 +69,7 @@
     logDiv.classList.remove("hide");
     log("Initializing device");
     device = new Twilio.Device(token, {
-      logLevel:1,
+      logLevel: 1,
       // Set Opus as our preferred codec. Opus generally performs better, requiring less bandwidth and
       // providing better audio quality in restrained network conditions.
       codecPreferences: ["opus", "pcmu"],
@@ -101,6 +105,67 @@
 
   // MAKE AN OUTGOING CALL
 
+  let timeout;
+  let started = false;
+  let counter = 0;
+
+  async function startCallLoop() {
+    if (started) {
+      log("Loop already in progress");
+      return;
+    }
+    if (device) {
+      log("Starting loop");
+      started = true;
+      async function loop() {
+        const call = await device.connect({});
+
+        call.on("cancel", () => {
+          log("Call canceled");
+        });
+        call.on("error", (error) => {
+          log(`Call error ${error.message}`)
+        });
+
+        call.on("accept", () => {
+          counter++;
+          loopCounter.innerText = `${counter}`;
+          log("Call accepted");
+          setTimeout(() => {
+            log("Disconnecting call");
+            call.disconnect();
+          }, 100);
+        });
+
+        call.on("disconnect", () => {
+          log("Call disconnect");
+          call.removeAllListeners();
+          if (started) {
+            timeout = setTimeout(() => {
+              log("Starting another call");
+              loop();
+            }, 100);
+          }
+        })
+      }
+      loop();
+    } else {
+      log("Cannot start loop: no device available");
+    }
+  }
+
+  startLoopButton.onclick = startCallLoop;
+
+  async function stopCallLoop() {
+    if (started) {
+      log("Stopping call loop");
+      started = false;
+      clearTimeout(timeout);
+    }
+  }
+
+  stopLoopButton.onclick = stopCallLoop;
+
   async function makeOutgoingCall() {
     var params = {
       // get the phone number to call from the DOM
@@ -111,7 +176,7 @@
       log(`Attempting to call ${params.To} ...`);
 
       // Twilio.Device.connect() returns a Call object
-      const call = await device.connect({ params });
+      const call = await device.connect({params});
 
       // add listeners to the Call
       // "accepted" means the call has finished connecting and the state is now "open"
@@ -231,7 +296,7 @@
   // AUDIO CONTROLS
 
   async function getAudioDevices() {
-    await navigator.mediaDevices.getUserMedia({ audio: true });
+    await navigator.mediaDevices.getUserMedia({audio: true});
     updateAllAudioDevices.bind(device);
   }
 
